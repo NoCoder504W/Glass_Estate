@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:syncfusion_flutter_pdf/pdf.dart';
 import 'package:glass_estate/data/datasources/geocoding_service.dart';
@@ -116,32 +118,44 @@ class ApartmentNotifier extends StateNotifier<AsyncValue<List<Apartment>>> {
         allowedExtensions: ['pdf'],
       );
 
-      if (result != null && result.files.single.path != null) {
-        print('--- [DEBUG] Fichier sélectionné : ${result.files.single.path} ---');
-        
-        // Don't block UI with loading state
-        // state = const AsyncValue.loading();
-        _ref.read(importStatusMessageProvider.notifier).state = 'Extraction du texte...';
-        _ref.read(importProgressProvider.notifier).state = 0.0; // Show progress bar immediately
-        
-        final file = File(result.files.single.path!);
-        print('--- [DEBUG] Lecture du fichier en bytes... ---');
-        final bytes = await file.readAsBytes();
-        
-        // Extract text using Syncfusion
-        print('--- [DEBUG] Extraction du texte avec Syncfusion... ---');
-        final PdfDocument document = PdfDocument(inputBytes: bytes);
-        String text = PdfTextExtractor(document).extractText();
-        document.dispose();
+      if (result != null) {
+        Uint8List? bytes;
 
-        // PRINT TO CONSOLE FOR USER
-        print('--- [DEBUG] Texte extrait (Aperçu des 500 premiers caractères) ---');
-        print(text.length > 500 ? text.substring(0, 500) : text);
-        print('--- [DEBUG] Fin extraction texte. Lancement du parsing... ---');
-        
-        // Continue with parsing
-        await importPdf(text);
-        print('--- [DEBUG] Parsing et sauvegarde terminés. ---');
+        if (kIsWeb) {
+          // On Web, bytes are directly available
+          bytes = result.files.single.bytes;
+          print('--- [DEBUG] Web: Bytes récupérés directement (${bytes?.length} bytes) ---');
+        } else if (result.files.single.path != null) {
+          // On Mobile/Desktop, read from path
+          print('--- [DEBUG] Fichier sélectionné : ${result.files.single.path} ---');
+          final file = File(result.files.single.path!);
+          print('--- [DEBUG] Lecture du fichier en bytes... ---');
+          bytes = await file.readAsBytes();
+        }
+
+        if (bytes != null) {
+          // Don't block UI with loading state
+          // state = const AsyncValue.loading();
+          _ref.read(importStatusMessageProvider.notifier).state = 'Extraction du texte...';
+          _ref.read(importProgressProvider.notifier).state = 0.0; // Show progress bar immediately
+          
+          // Extract text using Syncfusion
+          print('--- [DEBUG] Extraction du texte avec Syncfusion... ---');
+          final PdfDocument document = PdfDocument(inputBytes: bytes);
+          String text = PdfTextExtractor(document).extractText();
+          document.dispose();
+
+          // PRINT TO CONSOLE FOR USER
+          print('--- [DEBUG] Texte extrait (Aperçu des 500 premiers caractères) ---');
+          print(text.length > 500 ? text.substring(0, 500) : text);
+          print('--- [DEBUG] Fin extraction texte. Lancement du parsing... ---');
+          
+          // Continue with parsing
+          await importPdf(text);
+          print('--- [DEBUG] Parsing et sauvegarde terminés. ---');
+        } else {
+          print('--- [DEBUG] Erreur: Impossible de lire les bytes du fichier ---');
+        }
       } else {
         print('--- [DEBUG] Aucun fichier sélectionné. ---');
       }
