@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:glass_estate/data/models/geocoding_cache_model.dart';
 import 'package:http/http.dart' as http;
 import 'package:hive/hive.dart';
@@ -42,12 +43,19 @@ class GeocodingService {
     int attempts = 0;
     while (attempts < 3) {
       try {
-        final uri = Uri.parse(_baseUrl).replace(queryParameters: {
+        var uri = Uri.parse(_baseUrl).replace(queryParameters: {
           'q': query,
           'format': 'json',
           'limit': '1',
           'addressdetails': '1',
         });
+
+        if (kIsWeb) {
+          // Use a CORS proxy for Web to avoid CORS errors with Nominatim
+          // Note: This is a workaround. For production, use your own backend.
+          final proxyUrl = 'https://corsproxy.io/?';
+          uri = Uri.parse('$proxyUrl${Uri.encodeComponent(uri.toString())}');
+        }
 
         final response = await http.get(uri, headers: {
           'User-Agent': 'GlassEstateApp/1.0 (contact@example.com)', 
