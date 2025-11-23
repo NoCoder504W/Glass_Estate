@@ -7,17 +7,29 @@ import 'package:glass_estate/data/repositories/apartment_repository_impl.dart';
 import 'package:glass_estate/domain/entities/apartment.dart';
 import 'package:glass_estate/domain/repositories/apartment_repository.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:isar/isar.dart';
+import 'package:hive/hive.dart';
+import 'package:glass_estate/data/models/apartment_model.dart';
+import 'package:glass_estate/data/models/geocoding_cache_model.dart';
+import 'package:glass_estate/data/models/point_of_interest_model.dart';
 
-// 1. Isar Provider
-final isarProvider = Provider<Isar>((ref) {
-  throw UnimplementedError('Isar must be initialized in main.dart');
+// 1. Hive Box Providers
+final apartmentBoxProvider = Provider<Box<ApartmentModel>>((ref) {
+  return Hive.box<ApartmentModel>('apartments');
+});
+
+final geocodingBoxProvider = Provider<Box<GeocodingCacheModel>>((ref) {
+  return Hive.box<GeocodingCacheModel>('geocoding_cache');
+});
+
+final poiBoxProvider = Provider<Box<PointOfInterestModel>>((ref) {
+  return Hive.box<PointOfInterestModel>('pois');
 });
 
 // 2. Repository Provider
 final apartmentRepositoryProvider = Provider<ApartmentRepository>((ref) {
-  final isar = ref.watch(isarProvider);
-  return ApartmentRepositoryImpl(PdfParsingService(), GeocodingService(isar), isar);
+  final apartmentBox = ref.watch(apartmentBoxProvider);
+  final geocodingBox = ref.watch(geocodingBoxProvider);
+  return ApartmentRepositoryImpl(PdfParsingService(), GeocodingService(geocodingBox), apartmentBox);
 });
 
 // Progress Provider
@@ -30,7 +42,7 @@ class ApartmentNotifier extends StateNotifier<AsyncValue<List<Apartment>>> {
   final Ref _ref;
 
   ApartmentNotifier(this._repository, this._ref) : super(const AsyncValue.loading()) {
-    // Listen to Isar changes automatically
+    // Listen to Hive changes automatically
     _repository.watchApartments().listen((apartments) {
       state = AsyncValue.data(apartments);
     });

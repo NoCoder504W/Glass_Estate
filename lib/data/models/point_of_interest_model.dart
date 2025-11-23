@@ -1,20 +1,29 @@
-import 'package:isar/isar.dart';
+import 'package:hive/hive.dart';
 import 'package:glass_estate/domain/entities/point_of_interest.dart';
 
 part 'point_of_interest_model.g.dart';
 
-@collection
-class PointOfInterestModel {
-  Id id = Isar.autoIncrement;
-  
-  @Index(unique: true, replace: true)
+@HiveType(typeId: 2)
+class PointOfInterestModel extends HiveObject {
+  @HiveField(0)
   late String uid;
   
+  @HiveField(1)
   late String name;
+
+  @HiveField(2)
   late String address;
+
+  @HiveField(3)
   late double latitude;
+
+  @HiveField(4)
   late double longitude;
+
+  @HiveField(5)
   late int colorValue;
+
+  @HiveField(6)
   late bool isVisible;
 
   static PointOfInterestModel fromDomain(PointOfInterest poi) {

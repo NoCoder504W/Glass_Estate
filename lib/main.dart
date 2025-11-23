@@ -1,27 +1,26 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:glass_estate/presentation/screens/home_screen.dart';
-import 'package:isar/isar.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:hive_flutter/hive_flutter.dart';
 import 'package:glass_estate/data/models/apartment_model.dart';
 import 'package:glass_estate/data/models/geocoding_cache_model.dart';
 import 'package:glass_estate/data/models/point_of_interest_model.dart';
-import 'package:glass_estate/presentation/providers/apartment_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  final dir = await getApplicationDocumentsDirectory();
-  final isar = await Isar.open(
-    [ApartmentModelSchema, PointOfInterestModelSchema, GeocodingCacheModelSchema],
-    directory: dir.path,
-  );
+  await Hive.initFlutter();
+  
+  Hive.registerAdapter(ApartmentModelAdapter());
+  Hive.registerAdapter(GeocodingCacheModelAdapter());
+  Hive.registerAdapter(PointOfInterestModelAdapter());
 
-  runApp(ProviderScope(
-    overrides: [
-      isarProvider.overrideWithValue(isar),
-    ],
-    child: const MyApp(),
+  await Hive.openBox<ApartmentModel>('apartments');
+  await Hive.openBox<GeocodingCacheModel>('geocoding_cache');
+  await Hive.openBox<PointOfInterestModel>('pois');
+
+  runApp(const ProviderScope(
+    child: MyApp(),
   ));
 }
 

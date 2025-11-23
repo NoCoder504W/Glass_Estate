@@ -1,33 +1,61 @@
-import 'package:isar/isar.dart';
+import 'package:hive/hive.dart';
 import '../../domain/entities/apartment.dart';
 
 part 'apartment_model.g.dart';
 
-@collection
-class ApartmentModel {
-  Id id = Isar.autoIncrement;
+@HiveType(typeId: 0)
+class ApartmentModel extends HiveObject {
+  @HiveField(0)
+  late String uid;
 
-  @Index(unique: true, replace: true)
-  late String uid; // The UUID from domain
+  @HiveField(1)
+  late String bailleur;
 
-  late String bailleur; // Store enum as string
+  @HiveField(2)
   late String type;
+
+  @HiveField(3)
   late String region;
+
+  @HiveField(4)
   late String adresse;
+
+  @HiveField(5)
   late String ville;
+
+  @HiveField(6)
   late String cp;
+
+  @HiveField(7)
   late double surface;
+
+  @HiveField(8)
   late int etage;
+
+  @HiveField(9)
   late double loyer;
+
+  @HiveField(10)
   late bool hasAscenseur;
+
+  @HiveField(11)
   late String descriptionParking;
+
+  @HiveField(12)
   late String typeChauffage;
+
+  @HiveField(13)
   late String plafondRef;
+
+  @HiveField(14)
   double? latitude;
+
+  @HiveField(15)
   double? longitude;
+
+  @HiveField(16)
   bool isFavorite = false;
 
-  // Mapper: Domain -> Model
   static ApartmentModel fromDomain(Apartment apartment) {
     return ApartmentModel()
       ..uid = apartment.id
@@ -49,11 +77,10 @@ class ApartmentModel {
       ..isFavorite = apartment.isFavorite;
   }
 
-  // Mapper: Model -> Domain
   Apartment toDomain() {
     return Apartment(
       id: uid,
-      bailleur: Bailleur.values.firstWhere((e) => e.name == bailleur, orElse: () => Bailleur.prive),
+      bailleur: Bailleur.values.firstWhere((e) => e.name == bailleur, orElse: () => Bailleur.social),
       type: type,
       region: region,
       adresse: adresse,

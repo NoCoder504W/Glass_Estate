@@ -1,17 +1,17 @@
 import 'dart:convert';
 import 'package:glass_estate/data/models/geocoding_cache_model.dart';
 import 'package:http/http.dart' as http;
-import 'package:isar/isar.dart';
+import 'package:hive/hive.dart';
 import 'package:latlong2/latlong.dart';
 
 class GeocodingService {
   static const String _baseUrl = 'https://nominatim.openstreetmap.org/search';
-  final Isar _isar;
+  final Box<GeocodingCacheModel> _box;
   
   // In-memory cache for current session speed
   final Map<String, LatLng?> _memoryCache = {};
 
-  GeocodingService(this._isar);
+  GeocodingService(this._box);
 
   Future<LatLng?> getCoordinates(String address, String city, String zipCode) async {
     // Construct a query string
@@ -22,12 +22,20 @@ class GeocodingService {
       return _memoryCache[query];
     }
 
-    // 2. Check Persistent Cache (Isar)
-    final cachedModel = await _isar.geocodingCacheModels.filter().addressKeyEqualTo(query).findFirst();
-    if (cachedModel != null) {
-      final coords = LatLng(cachedModel.latitude, cachedModel.longitude);
-      _memoryCache[query] = coords;
-      return coords;
+    // 2. Check Persistent Cache (Hive)
+    try {
+      final cachedModel = _box.values.cast<GeocodingCacheModel?>().firstWhere(
+        (element) => element?.addressKey == query,
+        orElse: () => null,
+      );
+
+      if (cachedModel != null) {
+        final coords = LatLng(cachedModel.latitude, cachedModel.longitude);
+        _memoryCache[query] = coords;
+        return coords;
+      }
+    } catch (e) {
+      // Handle error
     }
 
     // 3. Fetch from API
@@ -54,14 +62,14 @@ class GeocodingService {
             
             // Save to caches
             _memoryCache[query] = coords;
-            await _isar.writeTxn(() async {
-              await _isar.geocodingCacheModels.put(GeocodingCacheModel()
-                ..addressKey = query
-                ..latitude = lat
-                ..longitude = lon
-                ..timestamp = DateTime.now()
-              );
-            });
+            
+            final newCache = GeocodingCacheModel()
+              ..addressKey = query
+              ..latitude = lat
+              ..longitude = lon
+              ..timestamp = DateTime.now();
+            
+            await _box.add(newCache);
 
             return coords;
           }

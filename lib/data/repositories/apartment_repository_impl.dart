@@ -3,16 +3,15 @@ import 'package:glass_estate/data/datasources/pdf_parsing_service.dart';
 import 'package:glass_estate/data/models/apartment_model.dart';
 import 'package:glass_estate/domain/entities/apartment.dart';
 import 'package:glass_estate/domain/repositories/apartment_repository.dart';
-import 'package:isar/isar.dart';
-
-import 'package:latlong2/latlong.dart'; // Add this import
+import 'package:hive/hive.dart';
+import 'package:latlong2/latlong.dart';
 
 class ApartmentRepositoryImpl implements ApartmentRepository {
   final PdfParsingService _parsingService;
   final GeocodingService _geocodingService;
-  final Isar _isar;
+  final Box<ApartmentModel> _box;
 
-  ApartmentRepositoryImpl(this._parsingService, this._geocodingService, this._isar);
+  ApartmentRepositoryImpl(this._parsingService, this._geocodingService, this._box);
 
   LatLng _getFallbackCoordinates(Apartment apt) {
     double lat = 48.8566;
@@ -29,10 +28,6 @@ class ApartmentRepositoryImpl implements ApartmentRepository {
       lng = 2.2628;
     }
 
-    // REMOVED JITTER to avoid "line" effect
-    // lat += (apt.id.hashCode % 1000 - 500) * 0.00005;
-    // lng += (apt.id.hashCode % 1000 - 500) * 0.00005;
-
     return LatLng(lat, lng);
   }
 
@@ -43,17 +38,28 @@ class ApartmentRepositoryImpl implements ApartmentRepository {
     final total = parsedApartments.length;
 
     // 2. Get existing apartments to handle sync
-    final existingModels = await _isar.apartmentModels.where().findAll();
-    final existingMap = {for (var m in existingModels) m.uid: m};
+    // We assume keys are UIDs.
+    final existingMap = <String, ApartmentModel>{};
+    for (var model in _box.values) {
+      existingMap[model.uid] = model;
+    }
 
     // 3. Identify deletions (In DB but not in new list)
     final newIds = parsedApartments.map((a) => a.id).toSet();
     final idsToDelete = existingMap.keys.where((id) => !newIds.contains(id)).toList();
 
     if (idsToDelete.isNotEmpty) {
-      await _isar.writeTxn(() async {
-        await _isar.apartmentModels.filter().anyOf(idsToDelete, (q, String id) => q.uidEqualTo(id)).deleteAll();
-      });
+      // If we used UID as key, we can just delete by ID.
+      // If not, we need to find the keys.
+      // To be safe, we find keys from models.
+      final keysToDelete = <dynamic>[];
+      for (var id in idsToDelete) {
+        final model = existingMap[id];
+        if (model != null) {
+          keysToDelete.add(model.key);
+        }
+      }
+      await _box.deleteAll(keysToDelete);
       print('Deleted ${idsToDelete.length} obsolete apartments.');
     }
 
@@ -109,17 +115,6 @@ class ApartmentRepositoryImpl implements ApartmentRepository {
           finalApt = finalApt.copyWith(latitude: coords.latitude, longitude: coords.longitude);
         } else {
           // Fallback
-          // If geocoding fails completely, we don't want to stack them or make a line.
-          // We will just leave them with the fallback coordinates but without jitter if possible,
-          // OR we can filter them out in the UI.
-          // But the user complained about the "line".
-          // Let's use the city center WITHOUT jitter for now, so they stack (less visible mess),
-          // or better: check if we can try one last time with just the city.
-          
-          // Actually, the "line" comes from the jitter in _getFallbackCoordinates.
-          // Let's REMOVE the jitter for now to satisfy the user request "points don't put themselves in the right place, they remake the line".
-          // If we remove jitter, they will stack.
-          
           double lat = 48.8566;
           double lng = 2.3522;
           
@@ -140,10 +135,9 @@ class ApartmentRepositoryImpl implements ApartmentRepository {
       
       finalApartments.add(finalApt);
 
-      // Save to Isar (Update or Insert)
-      await _isar.writeTxn(() async {
-        await _isar.apartmentModels.put(ApartmentModel.fromDomain(finalApt));
-      });
+      // Save to Hive (Update or Insert)
+      // Use UID as key
+      await _box.put(finalApt.id, ApartmentModel.fromDomain(finalApt));
     }
 
     return finalApartments;
@@ -151,39 +145,53 @@ class ApartmentRepositoryImpl implements ApartmentRepository {
 
   @override
   Future<List<Apartment>> getSavedApartments() async {
-    final models = await _isar.apartmentModels.where().findAll();
-    return models.map((e) => e.toDomain()).toList();
+    return _box.values.map((e) => e.toDomain()).toList();
   }
 
   @override
-  Stream<List<Apartment>> watchApartments() {
-    return _isar.apartmentModels.where().watch(fireImmediately: true).map((models) {
-      return models.map((e) => e.toDomain()).toList();
-    });
+  Stream<List<Apartment>> watchApartments() async* {
+    // Emit initial value
+    yield _box.values.map((e) => e.toDomain()).toList();
+    
+    // Watch for changes
+    await for (final _ in _box.watch()) {
+      yield _box.values.map((e) => e.toDomain()).toList();
+    }
   }
 
   @override
   Future<void> toggleFavorite(String id) async {
-    await _isar.writeTxn(() async {
-      final model = await _isar.apartmentModels.filter().uidEqualTo(id).findFirst();
-      if (model != null) {
-        model.isFavorite = !model.isFavorite;
-        await _isar.apartmentModels.put(model);
+    // Try to get by key (uid)
+    ApartmentModel? model = _box.get(id);
+    
+    // If not found by key, try to find by value (fallback if keys were not set correctly)
+    if (model == null) {
+      try {
+        model = _box.values.firstWhere((e) => e.uid == id);
+      } catch (e) {
+        // Not found
       }
-    });
+    }
+
+    if (model != null) {
+      model.isFavorite = !model.isFavorite;
+      await model.save();
+    }
   }
 
   @override
   Future<void> clearAll() async {
-    await _isar.writeTxn(() async {
-      await _isar.apartmentModels.clear();
-    });
+    await _box.clear();
   }
 
   @override
   Future<void> clearNonFavorites() async {
-    await _isar.writeTxn(() async {
-      await _isar.apartmentModels.filter().isFavoriteEqualTo(false).deleteAll();
-    });
+    final keysToDelete = <dynamic>[];
+    for (var model in _box.values) {
+      if (!model.isFavorite) {
+        keysToDelete.add(model.key);
+      }
+    }
+    await _box.deleteAll(keysToDelete);
   }
 }
