@@ -22,6 +22,9 @@ final geocodingBoxProvider = Provider<Box<GeocodingCacheModel>>((ref) {
 });
 
 final poiBoxProvider = Provider<Box<PointOfInterestModel>>((ref) {
+  if (!Hive.isBoxOpen('pois')) {
+    throw Exception('Box pois is not open');
+  }
   return Hive.box<PointOfInterestModel>('pois');
 });
 
@@ -80,7 +83,7 @@ class ApartmentNotifier extends StateNotifier<AsyncValue<List<Apartment>>> {
       _ref.read(importStatusMessageProvider.notifier).state = '';
       
       // No need to call loadApartments(), the stream will update
-    } catch (e, st) {
+    } catch (e) {
       _ref.read(importProgressProvider.notifier).state = null;
       // Show error in snackbar or similar instead of replacing the whole state
       print('Error importing PDF: $e');
@@ -142,7 +145,7 @@ class ApartmentNotifier extends StateNotifier<AsyncValue<List<Apartment>>> {
       } else {
         print('--- [DEBUG] Aucun fichier sélectionné. ---');
       }
-    } catch (e, st) {
+    } catch (e) {
       print('Error picking PDF: $e');
       _ref.read(importProgressProvider.notifier).state = null;
       // state = AsyncValue.error(e, st); // Don't crash the UI

@@ -76,15 +76,20 @@ class PoiNotifier extends StateNotifier<List<PointOfInterest>> {
   }
 
   Future<void> deletePoi(String id) async {
-    // Try to delete by key (uid)
-    if (_box.containsKey(id)) {
-      await _box.delete(id);
-    } else {
-      // Fallback: find key by uid
-      final keyToDelete = _box.values.firstWhere((e) => e.uid == id).key;
-      await _box.delete(keyToDelete);
+    try {
+      // Find the model by uid
+      final model = _box.values.firstWhere(
+        (e) => e.uid == id,
+        orElse: () => throw Exception('POI not found: $id'),
+      );
+      
+      // Delete using HiveObject's delete method which handles the key automatically
+      await model.delete();
+      
+      await loadPois();
+    } catch (e) {
+      print('Error deleting POI: $e');
     }
-    await loadPois();
   }
 
   Future<void> deleteAllPois() async {
